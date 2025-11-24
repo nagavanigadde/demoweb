@@ -1,88 +1,69 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const Database = require('better-sqlite3');
-const path = require('path');
+const mongoose = require('mongoose');
+
+const User = require('./models/User');
+const Product = require('./models/Product');
 
 const app = express();
-const PORT = 3001;
-const JWT_SECRET = 'your-secret-key-change-in-production';
+const PORT = process.env.PORT || 3001;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/demoweb';
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// Initialize SQLite database
-const db = new Database(path.join(__dirname, 'database.db'));
+// Connect to MongoDB
+mongoose.connect(MONGODB_URI)
+  .then(() => {
+    console.log('Connected to MongoDB');
+    seedDatabase();
+  })
+  .catch(err => {
+    console.error('MongoDB connection error:', err);
+  });
 
-// Create tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('admin', 'user'))
-  );
+// Seed default users and products
+const seedDatabase = async () => {
+  try {
+    // Seed users
+    const userCount = await User.countDocuments();
+    if (userCount === 0) {
+      const users = [
+        { username: 'admin1', password: bcrypt.hashSync('admin123', 10), role: 'admin' },
+        { username: 'admin2', password: bcrypt.hashSync('admin456', 10), role: 'admin' },
+        { username: 'user1', password: bcrypt.hashSync('user123', 10), role: 'user' },
+        { username: 'user2', password: bcrypt.hashSync('user456', 10), role: 'user' }
+      ];
 
-  CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    price REAL NOT NULL,
-    description TEXT
-  );
-`);
+      await User.insertMany(users);
+      console.log('Default users created:');
+      console.log('  Admin users: admin1/admin123, admin2/admin456');
+      console.log('  Normal users: user1/user123, user2/user456');
+    }
 
-// Seed default users (2 admins, 2 normal users)
-const seedUsers = () => {
-  const existingUsers = db.prepare('SELECT COUNT(*) as count FROM users').get();
+    // Seed products
+    const productCount = await Product.countDocuments();
+    if (productCount === 0) {
+      const products = [
+        { name: 'Laptop', price: 999.99, description: 'High-performance laptop' },
+        { name: 'Smartphone', price: 699.99, description: 'Latest smartphone model' },
+        { name: 'Headphones', price: 149.99, description: 'Wireless noise-canceling headphones' },
+        { name: 'Keyboard', price: 79.99, description: 'Mechanical gaming keyboard' },
+        { name: 'Mouse', price: 49.99, description: 'Ergonomic wireless mouse' }
+      ];
 
-  if (existingUsers.count === 0) {
-    const insertUser = db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)');
-
-    const users = [
-      { username: 'admin1', password: 'admin123', role: 'admin' },
-      { username: 'admin2', password: 'admin456', role: 'admin' },
-      { username: 'user1', password: 'user123', role: 'user' },
-      { username: 'user2', password: 'user456', role: 'user' }
-    ];
-
-    users.forEach(user => {
-      const hashedPassword = bcrypt.hashSync(user.password, 10);
-      insertUser.run(user.username, hashedPassword, user.role);
-    });
-
-    console.log('Default users created:');
-    console.log('  Admin users: admin1/admin123, admin2/admin456');
-    console.log('  Normal users: user1/user123, user2/user456');
+      await Product.insertMany(products);
+      console.log('Sample products created');
+    }
+  } catch (error) {
+    console.error('Error seeding database:', error);
   }
 };
-
-// Seed some sample products
-const seedProducts = () => {
-  const existingProducts = db.prepare('SELECT COUNT(*) as count FROM products').get();
-
-  if (existingProducts.count === 0) {
-    const insertProduct = db.prepare('INSERT INTO products (name, price, description) VALUES (?, ?, ?)');
-
-    const products = [
-      { name: 'Laptop', price: 999.99, description: 'High-performance laptop' },
-      { name: 'Smartphone', price: 699.99, description: 'Latest smartphone model' },
-      { name: 'Headphones', price: 149.99, description: 'Wireless noise-canceling headphones' },
-      { name: 'Keyboard', price: 79.99, description: 'Mechanical gaming keyboard' },
-      { name: 'Mouse', price: 49.99, description: 'Ergonomic wireless mouse' }
-    ];
-
-    products.forEach(product => {
-      insertProduct.run(product.name, product.price, product.description);
-    });
-
-    console.log('Sample products created');
-  }
-};
-
-seedUsers();
-seedProducts();
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
@@ -113,33 +94,38 @@ const requireAdmin = (req, res, next) => {
 // Routes
 
 // Login
-app.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
+app.post('/api/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
 
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required' });
-  }
-
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-
-  if (!user || !bcrypt.compareSync(password, user.password)) {
-    return res.status(401).json({ error: 'Invalid username or password' });
-  }
-
-  const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role },
-    JWT_SECRET,
-    { expiresIn: '24h' }
-  );
-
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      username: user.username,
-      role: user.role
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
     }
-  });
+
+    const user = await User.findOne({ username });
+
+    if (!user || !bcrypt.compareSync(password, user.password)) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    const token = jwt.sign(
+      { id: user._id, username: user.username, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Get current user
@@ -148,36 +134,51 @@ app.get('/api/me', authenticateToken, (req, res) => {
 });
 
 // Get all products (with optional search)
-app.get('/api/products', authenticateToken, (req, res) => {
-  const { search } = req.query;
+app.get('/api/products', authenticateToken, async (req, res) => {
+  try {
+    const { search } = req.query;
 
-  let products;
-  if (search) {
-    products = db.prepare(
-      'SELECT * FROM products WHERE name LIKE ? OR description LIKE ?'
-    ).all(`%${search}%`, `%${search}%`);
-  } else {
-    products = db.prepare('SELECT * FROM products').all();
+    let products;
+    if (search) {
+      products = await Product.find({
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { description: { $regex: search, $options: 'i' } }
+        ]
+      });
+    } else {
+      products = await Product.find();
+    }
+
+    res.json(products);
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  res.json(products);
 });
 
 // Add new product (admin only)
-app.post('/api/products', authenticateToken, requireAdmin, (req, res) => {
-  const { name, price, description } = req.body;
+app.post('/api/products', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { name, price, description } = req.body;
 
-  if (!name || price === undefined) {
-    return res.status(400).json({ error: 'Name and price are required' });
+    if (!name || price === undefined) {
+      return res.status(400).json({ error: 'Name and price are required' });
+    }
+
+    const newProduct = new Product({
+      name,
+      price,
+      description: description || ''
+    });
+
+    await newProduct.save();
+
+    res.status(201).json(newProduct);
+  } catch (error) {
+    console.error('Error creating product:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  const result = db.prepare(
-    'INSERT INTO products (name, price, description) VALUES (?, ?, ?)'
-  ).run(name, price, description || '');
-
-  const newProduct = db.prepare('SELECT * FROM products WHERE id = ?').get(result.lastInsertRowid);
-
-  res.status(201).json(newProduct);
 });
 
 // Start server
