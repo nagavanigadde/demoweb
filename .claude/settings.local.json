@@ -10,7 +10,8 @@
       "Bash(npm run dev:*)",
       "Bash(git add:*)",
       "WebFetch(domain:demoweb-bx3z-git-main-naga-vani-gaddes-projects.vercel.app)",
-      "Bash(git check-ignore:*)"
+      "Bash(git check-ignore:*)",
+      "WebFetch(domain:demoweb-kappa.vercel.app)"
     ],
     "deny": [],
     "ask": []
