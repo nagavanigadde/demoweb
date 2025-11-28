@@ -22,6 +22,7 @@ module.exports = async (req, res) => {
 
     // Seed users
     const userCount = await User.countDocuments();
+    let usersCreated = false;
     if (userCount === 0) {
       const users = [
         { username: 'admin1', password: bcrypt.hashSync('admin123', 10), role: 'admin' },
@@ -30,10 +31,12 @@ module.exports = async (req, res) => {
         { username: 'user2', password: bcrypt.hashSync('user456', 10), role: 'user' }
       ];
       await User.insertMany(users);
+      usersCreated = true;
     }
 
     // Seed products
     const productCount = await Product.countDocuments();
+    let productsCreated = false;
     if (productCount === 0) {
       const products = [
         { name: 'Laptop', price: 999.99, description: 'High-performance laptop' },
@@ -43,15 +46,22 @@ module.exports = async (req, res) => {
         { name: 'Mouse', price: 49.99, description: 'Ergonomic wireless mouse' }
       ];
       await Product.insertMany(products);
+      productsCreated = true;
     }
 
     res.json({
       message: 'Database seeded successfully',
-      users: userCount === 0 ? 'Created' : 'Already exist',
-      products: productCount === 0 ? 'Created' : 'Already exist'
+      users: usersCreated ? 'Created' : 'Already exist',
+      products: productsCreated ? 'Already exist' : 'Already exist',
+      userCount,
+      productCount
     });
   } catch (error) {
     console.error('Seed error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error.message,
+      stack: error.stack
+    });
   }
 };
