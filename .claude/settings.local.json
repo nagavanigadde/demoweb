@@ -12,7 +12,8 @@
       "WebFetch(domain:demoweb-bx3z-git-main-naga-vani-gaddes-projects.vercel.app)",
       "Bash(git check-ignore:*)",
       "WebFetch(domain:demoweb-kappa.vercel.app)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "WebFetch(domain:wtechtalkdemo.vercel.app)"
     ],
     "deny": [],
     "ask": []
